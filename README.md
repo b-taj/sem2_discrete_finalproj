@@ -35,6 +35,7 @@ The goal is to build a **temporal item–item network** and analyze it using gra
 ---
 
 ## 🏗️ Project Structure
+```bash
 project/
 ├── data/
 │   └── cpi_data.csv          # scraped/downloaded data
@@ -47,6 +48,7 @@ project/
 │   └── visualize.py          # Step 8: plots
 ├── main.py                   # runs full pipeline
 └── report/
+```
 
 ## ⚙️ Pipeline Workflow
 
