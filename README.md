@@ -36,23 +36,17 @@ The goal is to build a **temporal item–item network** and analyze it using gra
 
 ## 🏗️ Project Structure
 project/
-│
 ├── data/
-│ ├── pdfs/ # Raw CPI PDFs
-│ ├── cpi_data.csv # Processed dataset
-│
+│   └── cpi_data.csv          # scraped/downloaded data
 ├── src/
-│ ├── scraper.py # PDF parsing & extraction
-│ ├── preprocess.py # Price change vectors
-│ ├── similarity.py # Cosine similarity computation
-│ ├── graph_builder.py # Graph construction
-│ ├── analysis.py # Centrality & temporal analysis
-│ ├── visualize.py # Graph visualizations
-│
-├── main.py # Full pipeline execution
-├── download_pdfs.py # PBS PDF downloader
-├── report/ # Figures & outputs
----
+│   ├── scraper.py            # Step 1: data collection
+│   ├── preprocess.py         # Step 2: price change vectors
+│   ├── similarity.py         # Steps 3-4: cosine similarity + city count
+│   ├── graph_builder.py      # Step 5: graph construction
+│   ├── analysis.py           # Steps 6-7: centrality + temporal
+│   └── visualize.py          # Step 8: plots
+├── main.py                   # runs full pipeline
+└── report/
 
 ## ⚙️ Pipeline Workflow
 
