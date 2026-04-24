@@ -1,32 +1,21 @@
-# =========================
 # Python
-# =========================
 __pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-*.log
+*.pyc
 
-# virtual environment
+# Virtual environment
 venv/
-env/
-.venv/
+.env/
 
-# =========================
-# Data outputs (YOUR PROJECT)
-# =========================
-data/
+# Data outputs (generated files)
+data/cpi_data.csv
+data/*.pkl
+data/*.csv
+data/pdfs/
+
+# Reports / figures
 report/figures/
+report/*.png
 
-# large generated files
-*.pkl
-*.csv
-*.json
-
-# =========================
-# IDE / OS
-# =========================
-.vscode/
-.idea/
+# OS files
 .DS_Store
 Thumbs.db
