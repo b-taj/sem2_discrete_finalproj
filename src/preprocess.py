@@ -44,40 +44,43 @@ def filter_complete_series(df, required_months=12):
     """
     Keep (item, city, year) combinations that have enough months.
 
-    For years with 12 months of data, requires all 12.
-    For PARTIAL years (fewer than 12 months available across all items),
-    automatically lowers the threshold to the actual max months available,
-    so that no year is dropped entirely.
+    The threshold per year is:
+      min(required_months, max_months_any_item_city_pair_has)
 
-    This ensures 2023 (10 months: Mar-Dec), 2024 (12), 2025 (12),
-    and 2026 (3 months) are ALL kept for analysis.
+    This handles 2025 correctly: it has 12 months total BUT cities
+    changed mid-year (PDF cities Jan-Jun, Excel cities Jul-Dec),
+    so the best any (item, city) pair can have is 6 months.
+    The threshold auto-adjusts to 6 so 2025 is not dropped.
     """
     all_records = []
 
     for year, year_df in df.groupby('year'):
-        # How many distinct months exist for this year in the dataset?
         months_available = year_df['month'].nunique()
-        # Require at least 2 months (need ≥2 prices to compute ≥1 Δp)
-        # But cap at required_months so full years still require all 12
-        threshold = min(months_available, required_months)
-        threshold = max(threshold, 2)   # always need at least 2
 
+        # Key fix: threshold = max months any (item,city) pair actually has
+        # NOT total months in the year (which double-counts city switches)
         counts = (
             year_df.groupby(['item', 'city'])['month']
             .nunique()
             .reset_index(name='month_count')
         )
         counts['year'] = year
-        complete = counts[counts['month_count'] >= threshold]
 
+        max_achievable = counts['month_count'].max() if len(counts) > 0 else 0
+        # Use the smaller of: what is achievable vs what we want
+        threshold = min(max_achievable, required_months)
+        threshold = max(threshold, 2)   # always need ≥2 months for ≥1 Δp
+
+        complete = counts[counts['month_count'] >= threshold]
         kept = year_df.merge(
             complete[['item', 'city', 'year']],
             on=['item', 'city', 'year']
         )
         items_kept = kept['item'].nunique()
-        print(f"  Year {year}: {months_available} months available, "
+        print(f"  Year {year}: {months_available} total months, "
+              f"max per (item,city)={max_achievable}, "
               f"threshold={threshold}, "
-              f"{items_kept} items kept, "
+              f"{items_kept} items, "
               f"{len(kept):,} rows")
         all_records.append(kept)
 

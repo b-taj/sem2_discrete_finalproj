@@ -1,16 +1,20 @@
 """
-scraper.py  —  FINAL VERSION
-==============================
-Handles both formats confirmed working:
-  - data/pdfs/*.pdf         (PBS monthly SPI price tables)
-  - data/annexures/*.xlsx   (PBS annexure Excel files)
+scraper.py
+----------
+Loads ALL Excel files from data/annexures/ and produces
+a single long-format CSV: data/cpi_data.csv
 
-File naming: YYYY_MM.pdf / YYYY_MM.xlsx
-e.g. 2023_03.pdf, 2025_07.xlsx
+Confirmed file structure (from inspecting real files):
+  Row 0  : Title row  e.g. "Average Monthly Prices of 51 Essential Items..."
+  Row 1  : Header     col0=S.No, col1=Description, col2=Unit, col3..19=Cities
+  Row 2+ : Data       51 item rows
+  Col 20+: Average prices & % change — ignored
+
+File naming convention: YYYY_MM.xlsx  e.g. 2023_03.xlsx
 
 Usage:
-    python src/scraper.py                        # load everything → data/cpi_data.csv
-    python src/scraper.py data/pdfs/2023_03.pdf  # inspect one file
+    python src/scraper.py                          # load all → data/cpi_data.csv
+    python src/scraper.py data/annexures/2023_03.xlsx  # inspect one file
 """
 
 import os
@@ -25,514 +29,387 @@ warnings.filterwarnings("ignore")
 
 
 # ─────────────────────────────────────────────────────────────
-# FILE VALIDATION
-# ─────────────────────────────────────────────────────────────
-
-def is_real_pdf(filepath):
-    try:
-        with open(filepath, "rb") as f:
-            return f.read(5) == b"%PDF-"
-    except Exception:
-        return False
-
-def is_real_xlsx(filepath):
-    try:
-        with open(filepath, "rb") as f:
-            return f.read(4) == b"PK\x03\x04"
-    except Exception:
-        return False
-
-
-# ─────────────────────────────────────────────────────────────
-# CITY NAME CLEANUP
-# ─────────────────────────────────────────────────────────────
-# PBS PDFs wrap city names across two lines with a hyphen.
+# CITY NAME LOOKUP
+# Adobe/online converters preserve the PDF line-break hyphens
 # e.g. 'Islam-\nabad' → 'Islamabad'
+# ─────────────────────────────────────────────────────────────
 
 _CITY_FIXES = {
-    'Islam-\nabad':     'Islamabad',
-    'Rawal-\npindi':    'Rawalpindi',
-    'Gujran-\nwala':    'Gujranwala',
-    'Faisal-\nabad':    'Faisalabad',
-    'Sar-\ngodha':      'Sargodha',
-    'Baha-\nwalpur':    'Bahawalpur',
-    'Hyder-\nabad':     'Hyderabad',
-    'Pesha-\nwar':      'Peshawar',
-    'Khuz-\ndar':       'Khuzdar',
-    'Muzaf-\nfarabad':  'Muzaffarabad',
-    'Muz-\naffarabad':  'Muzaffarabad',
-    'D.I.\nKhan':       'D.I. Khan',
-    'D.G.\nKhan':       'D.G. Khan',
-    'Nawa-\nbshah':     'Nawabshah',
-    'Jac-\nobabad':     'Jacobabad',
-    'Mir-\npur':        'Mirpur',
-    'Gilgit\nCity':     'Gilgit',
-    'Tur-\nbat':        'Turbat',
-    'M.B.\nDin':        'Mandi Bahauddin',
-    'Shei-\nkhupura':   'Sheikhupura',
-    'Sahiwal\nCity':    'Sahiwal',
-    'Dera\nIsmail':     'D.I. Khan',
-    'Dera\nGhazi':      'D.G. Khan',
+    'Islam-\nabad':    'Islamabad',
+    'Rawal-\npindi':   'Rawalpindi',
+    'Gujran-\nwala':   'Gujranwala',
+    'Faisal-\nabad':   'Faisalabad',
+    'Sar-\ngodha':     'Sargodha',
+    'Baha-\nwalpur':   'Bahawalpur',
+    'Hyder-\nabad':    'Hyderabad',
+    'Pesha-\nwar':     'Peshawar',
+    'Khuz-\ndar':      'Khuzdar',
+    'Muzaf-\nfarabad': 'Muzaffarabad',
+    'Muz-\naffarabad': 'Muzaffarabad',
+    'D.I.\nKhan':      'D.I. Khan',
+    'D.G.\nKhan':      'D.G. Khan',
+    'Nawa-\nbshah':    'Nawabshah',
+    'Jac-\nobabad':    'Jacobabad',
+    'Mir-\npur':       'Mirpur',
+    'Tur-\nbat':       'Turbat',
+    'M.B.\nDin':       'Mandi Bahauddin',
+    'Shei-\nkhupura':  'Sheikhupura',
+    # newer annexure files use clean names already, handled by fallback below
 }
 
-# Non-city trailing columns to drop
-_NON_CITY_PATTERNS = re.compile(
-    r'average|%change|feb|mar|jan|apr|may|jun|jul|aug|sep|oct|nov|dec'
-    r'|\d{4}|over|prices?|change',
+# Patterns that identify non-city columns (averages, % change, dates)
+_NON_CITY = re.compile(
+    r'average|%change|%\s*change|feb|mar|jan|apr|may|jun|'
+    r'jul|aug|sep|oct|nov|dec|\d{4}|over|prices?|change|s\.?\s*no',
     re.IGNORECASE
 )
 
-def clean_city_name(raw):
-    """Convert raw column header to clean city name, or None if not a city."""
-    if not raw:
+
+def _clean_city(raw):
+    """
+    Convert a raw column header to a clean city name.
+    Returns None if the column is not a city (e.g. averages, % change).
+    """
+    if raw is None or str(raw).strip() in ('nan', '', 'NaN'):
         return None
     raw = str(raw).strip()
+
+    # Direct lookup for hyphenated names
     if raw in _CITY_FIXES:
         return _CITY_FIXES[raw]
-    # Generic: remove line-break hyphens and newlines
+
+    # Generic fix: remove line-break hyphens introduced by PDF conversion
     cleaned = re.sub(r'-\n', '', raw).replace('\n', ' ').strip()
+
     # Drop if it matches non-city patterns
-    if _NON_CITY_PATTERNS.search(cleaned):
+    if _NON_CITY.search(cleaned):
         return None
-    # Drop if too short or purely numeric
-    if len(cleaned) < 3 or re.match(r'^\d+$', cleaned):
+
+    # Drop if too short, purely numeric, or clearly not a place name
+    if len(cleaned) < 2 or re.match(r'^\d+$', cleaned):
         return None
+
     return cleaned.title()
 
 
 # ─────────────────────────────────────────────────────────────
-# PDF PARSER
+# VALIDATE FILE
 # ─────────────────────────────────────────────────────────────
-#
-# PBS SPI price tables have this structure:
-#   col 0 : S. No.  (row number like '1', '2', ...)
-#   col 1 : Description (item name — may overflow into col 2)
-#   col 2 : Unit  (sometimes contains overflow from description)
-#   col 3+ : City prices  (until 'Average Prices' columns start)
-#
-# The table always has exactly 51 item rows + 1 header row.
 
-def parse_pdf(filepath):
-    """
-    Parse a PBS SPI monthly price PDF.
-    Returns (items_df, cities) or (None, None).
-    """
+def _is_real_xlsx(filepath):
+    """Real XLSX files are ZIP archives starting with PK\x03\x04."""
     try:
-        import pdfplumber
-    except ImportError:
-        print("    ✗ pdfplumber not installed. Run: pip install pdfplumber")
-        return None, None
-
-    records = []
-    cities  = None
-
-    try:
-        with pdfplumber.open(str(filepath)) as pdf:
-            for page in pdf.pages:
-                tables = page.extract_tables()
-                for table in tables:
-                    if len(table) < 5:
-                        continue
-
-                    header = table[0]
-                    if not header or len(header) < 6:
-                        continue
-
-                    # ── Detect city columns from header ──────────────────
-                    city_col_map = {}   # col_index → city_name
-                    for col_idx, cell in enumerate(header):
-                        if col_idx < 3:   # skip S.No, Description, Unit
-                            continue
-                        city = clean_city_name(cell)
-                        if city:
-                            city_col_map[col_idx] = city
-
-                    if len(city_col_map) < 3:
-                        continue   # not a price table
-
-                    page_cities = list(city_col_map.values())
-                    if cities is None:
-                        cities = page_cities
-
-                    # ── Parse data rows ───────────────────────────────────
-                    for row in table[1:]:
-                        if not row:
-                            continue
-
-                        sno  = str(row[0] or '').strip()
-                        desc = str(row[1] or '').strip()
-                        unit = str(row[2] or '').strip()
-
-                        # Only process numbered item rows
-                        if not sno.isdigit():
-                            continue
-                        if not desc:
-                            continue
-
-                        # Fix description overflow into unit column
-                        # (happens when item name is long — unit starts with ')')
-                        if unit.startswith(')'):
-                            desc = (desc + unit).strip()
-                        # Clean item name
-                        item_name = re.sub(r'\s+', ' ', desc).strip().lower()
-
-                        # Extract prices for each city column
-                        rec = {'item': item_name, 'category': 'SPI Items'}
-                        for col_idx, city in city_col_map.items():
-                            if col_idx < len(row):
-                                raw_val = str(row[col_idx] or '').replace(',', '').strip()
-                                try:
-                                    price = float(raw_val)
-                                    rec[city] = price if price > 0 else np.nan
-                                except ValueError:
-                                    rec[city] = np.nan
-                            else:
-                                rec[city] = np.nan
-                        records.append(rec)
-
-    except Exception as e:
-        print(f"    ✗ PDF parse error: {e}")
-        return None, None
-
-    if not records:
-        return None, None
-
-    df = pd.DataFrame(records)
-    return df, cities
+        with open(filepath, 'rb') as f:
+            return f.read(4) == b'PK\x03\x04'
+    except Exception:
+        return False
 
 
 # ─────────────────────────────────────────────────────────────
-# EXCEL PARSER
+# PARSE ONE EXCEL FILE
 # ─────────────────────────────────────────────────────────────
-#
-# PBS Annexure Excel files have a similar layout but as spreadsheets.
-# The city header row is auto-detected by finding 3+ known city names.
-
-_CITY_KEYWORDS = [
-    'karachi', 'lahore', 'islamabad', 'rawalpindi', 'faisalabad',
-    'multan', 'peshawar', 'quetta', 'hyderabad', 'sialkot',
-    'gujranwala', 'sukkur', 'larkana', 'bahawalpur', 'sargodha',
-]
-
-def _fix_excel_city(name):
-    """Fix hyphenated city names from Excel merged cells."""
-    joined = str(name).replace('-', '').replace(' ', '').lower()
-    lookup = {
-        'islamabad':    'Islamabad',   'rawalpindi':   'Rawalpindi',
-        'gujranwala':   'Gujranwala',  'sialkot':      'Sialkot',
-        'lahore':       'Lahore',      'faisalabad':   'Faisalabad',
-        'sargodha':     'Sargodha',    'multan':       'Multan',
-        'bahawalpur':   'Bahawalpur',  'karachi':      'Karachi',
-        'hyderabad':    'Hyderabad',   'sukkur':       'Sukkur',
-        'larkana':      'Larkana',     'peshawar':     'Peshawar',
-        'bannu':        'Bannu',       'quetta':       'Quetta',
-        'khuzdar':      'Khuzdar',     'turbat':       'Turbat',
-        'zhob':         'Zhob',        'gilgit':       'Gilgit',
-        'muzaffarabad': 'Muzaffarabad','mirpur':       'Mirpur',
-        'nawabshah':    'Nawabshah',   'jacobabad':    'Jacobabad',
-        'sahiwal':      'Sahiwal',     'sheikhupura':  'Sheikhupura',
-        'chiniot':      'Chiniot',     'okara':        'Okara',
-        'dikhan':       'D.I. Khan',   'dgkhan':       'D.G. Khan',
-        'mandibahauddin':'Mandi Bahauddin',
-    }
-    return lookup.get(joined, str(name).strip().title())
 
 def parse_excel(filepath):
     """
-    Parse a PBS CPI Annexure Excel file.
-    Returns (items_df, cities) or (None, None).
+    Parse one PBS SPI price Excel file.
+
+    Expected layout:
+      Row 0  → title (skipped)
+      Row 1  → headers: S.No | Description | Unit | City1 | City2 | ...
+      Row 2+ → data:    1    | Wheat Flour  | 20Kg | price | price | ...
+
+    Returns
+    -------
+    items_df : DataFrame  columns = ['item', 'category'] + city names
+    cities   : list of city name strings
     """
     try:
         raw = pd.read_excel(filepath, header=None, engine='openpyxl')
     except Exception as e:
-        print(f"    ✗ Excel read error: {e}")
+        print(f"    Cannot read: {e}")
         return None, None
 
-    # ── Find header row ───────────────────────────────────────
-    header_row = None
-    for i, row in raw.iterrows():
-        row_lower = row.astype(str).str.strip().str.lower()
-        hits = sum(
-            row_lower.str.contains(city, na=False).any()
-            for city in _CITY_KEYWORDS
-        )
-        if hits >= 3:
-            header_row = i
+    if raw.shape[0] < 3 or raw.shape[1] < 6:
+        print(f"    File too small: {raw.shape}")
+        return None, None
+
+    # ── Locate the header row ─────────────────────────────────
+    # It contains 'Description' in one of the first 5 rows
+    header_row_idx = None
+    for i in range(min(5, len(raw))):
+        row_vals = raw.iloc[i].astype(str).str.strip().str.lower()
+        if row_vals.str.contains('description').any():
+            header_row_idx = i
             break
 
-    if header_row is None:
-        print(f"    ✗ Cannot find city header row")
+    # Fallback: use row 1 if Description not found (older file format)
+    if header_row_idx is None:
+        header_row_idx = 1
+
+    header = raw.iloc[header_row_idx].tolist()
+
+    # ── Map column index → city name ──────────────────────────
+    # Skip cols 0 (S.No), 1 (Description), 2 (Unit)
+    city_col_map = {}   # { col_index: city_name }
+    for col_i, cell in enumerate(header):
+        if col_i < 3:
+            continue
+        city = _clean_city(cell)
+        if city:
+            city_col_map[col_i] = city
+
+    if len(city_col_map) < 3:
+        print(f"    Only {len(city_col_map)} city columns found — check file format")
+        # Debug: print what was in the header row
+        print(f"    Header row content: {[str(h)[:15] for h in header[:12]]}")
         return None, None
 
-    # Re-read with header
-    df = pd.read_excel(filepath, header=header_row, engine='openpyxl')
-    df.columns = [str(c).strip() for c in df.columns]
-    all_cols   = list(df.columns)
+    cities = list(city_col_map.values())
 
-    # ── Identify item column (first column with real text names) ─
-    item_col = all_cols[0]
-    for col in all_cols[:4]:
-        # Check if this column has non-numeric values that look like item names
-        sample = df[col].dropna().astype(str).str.strip()
-        sample = sample[sample != 'nan']
-        non_numeric = sample[~sample.str.match(r'^\d+\.?\d*$')]
-        if len(non_numeric) >= 5:
-            item_col = col
-            break
+    # ── Parse item rows ───────────────────────────────────────
+    records = []
+    data_start = header_row_idx + 1
 
-    # ── Identify city columns ─────────────────────────────────
-    city_cols = {}   # original_name → clean_name
-    for c in all_cols:
-        if c == item_col:
+    for idx in range(data_start, len(raw)):
+        row  = raw.iloc[idx].tolist()
+        sno  = str(row[0]).strip() if len(row) > 0 else ''
+        desc = str(row[1]).strip() if len(row) > 1 else ''
+        unit = str(row[2]).strip() if len(row) > 2 else ''
+
+        # Only process numbered rows (1, 2, ... 51)
+        if not sno.isdigit():
             continue
-        c_str = str(c).strip()
-        if c_str in ('nan', '', 'NaN') or c_str.lower().startswith('unnamed'):
-            continue
-        fixed = _fix_excel_city(c_str)
-        # Only keep if it looks like a city (not a stat column)
-        if not _NON_CITY_PATTERNS.search(c_str):
-            city_cols[c] = fixed
-
-    if len(city_cols) < 3:
-        print(f"    ✗ Found only {len(city_cols)} city columns")
-        return None, None
-
-    # ── Parse rows ────────────────────────────────────────────
-    current_cat = 'Unknown'
-    records     = []
-
-    for _, row in df.iterrows():
-        name = str(row[item_col]).strip()
-        if name in ('nan', '', 'NaN', 'None'):
-            continue
-        # Skip pure row numbers
-        if re.match(r'^\d+\.?\d*$', name):
+        if not desc or desc == 'nan':
             continue
 
-        # Check if any city column has a numeric value
-        numeric_found = False
-        for orig_c in city_cols:
-            val = str(row.get(orig_c, '')).replace(',', '').strip()
-            try:
-                float(val)
-                numeric_found = True
-                break
-            except ValueError:
-                pass
+        # Some converters split long descriptions — unit col starts with ')'
+        if unit.startswith(')'):
+            desc = (desc + unit).strip()
 
-        if not numeric_found:
-            current_cat = name   # it's a category heading
-            continue
+        item_name = re.sub(r'\s+', ' ', desc).strip().lower()
 
-        rec = {'item': name.lower().strip(), 'category': current_cat}
-        for orig_c, clean_c in city_cols.items():
-            val = str(row.get(orig_c, '')).replace(',', '').strip()
-            try:
-                price = float(val)
-                rec[clean_c] = price if price > 0 else np.nan
-            except ValueError:
-                rec[clean_c] = np.nan
+        rec = {'item': item_name, 'category': 'SPI Items'}
+        for col_i, city in city_col_map.items():
+            if col_i < len(row):
+                raw_val = str(row[col_i]).replace(',', '').strip()
+                try:
+                    price = float(raw_val)
+                    rec[city] = price if price > 0 else np.nan
+                except ValueError:
+                    rec[city] = np.nan
+            else:
+                rec[city] = np.nan
+
         records.append(rec)
 
     if not records:
+        print(f"    No item rows extracted")
         return None, None
 
-    df_out = pd.DataFrame(records)
-    cities = list(city_cols.values())
-    return df_out, cities
+    items_df = pd.DataFrame(records)
+    return items_df, cities
 
 
 # ─────────────────────────────────────────────────────────────
-# AUDIT
+# WIDE → LONG FORMAT
 # ─────────────────────────────────────────────────────────────
 
-def audit_data_folder(base_dir="data"):
-    """Scan folders, validate files, report coverage."""
-    print("\n" + "="*65)
-    print("  DATA AUDIT")
-    print("="*65)
-
-    folders = {
-        "PDF":   Path(base_dir) / "pdfs",
-        "Excel": Path(base_dir) / "annexures",
-    }
-
-    valid_files   = []
-    invalid_files = []
-
-    for fmt, folder in folders.items():
-        if not folder.exists():
-            print(f"\n  [{fmt}] Folder not found: {folder}")
-            continue
-
-        files = sorted(folder.glob("*"))
-        if not files:
-            print(f"\n  [{fmt}] Folder empty")
-            continue
-
-        print(f"\n  [{fmt}] {folder}  ({len(files)} files)")
-
-        for fp in files:
-            stem   = fp.stem
-            suffix = fp.suffix.lower()
-            m      = re.match(r'^(\d{4})_(\d{2})$', stem)
-            if not m:
-                print(f"    ✗ SKIP  {fp.name}  — must be YYYY_MM{suffix}")
-                continue
-
-            year, month = int(m.group(1)), int(m.group(2))
-            valid = is_real_xlsx(fp) if suffix in ('.xlsx','.xls') else is_real_pdf(fp)
-
-            kb = fp.stat().st_size // 1024
-            if valid:
-                print(f"    ✓ OK    {fp.name}  ({kb} KB)")
-                valid_files.append((year, month, fp, fmt))
-            else:
-                print(f"    ✗ FAKE  {fp.name}  ({kb} KB)  ← delete and re-download")
-                invalid_files.append(fp)
-
-    # Coverage check across years present in valid_files
-    if valid_files:
-        years_present = sorted(set(y for y, _, _, _ in valid_files))
-        all_months = set()
-        for y in years_present:
-            for mo in range(1, 13):
-                all_months.add((y, mo))
-        covered = {(y, m) for y, m, _, _ in valid_files}
-        missing = sorted(all_months - covered)
-
-        print(f"\n  Valid   : {len(valid_files)}")
-        print(f"  Fake    : {len(invalid_files)}")
-        print(f"  Missing : {len(missing)} months")
-        if missing:
-            s = ", ".join(f"{y}-{m:02d}" for y, m in missing[:12])
-            if len(missing) > 12:
-                s += f" ... (+{len(missing)-12})"
-            print(f"            {s}")
-
-    print("="*65 + "\n")
-    return valid_files, invalid_files
-
-
-# ─────────────────────────────────────────────────────────────
-# WIDE → LONG
-# ─────────────────────────────────────────────────────────────
-
-def wide_to_long(items_df, cities, year, month):
+def _wide_to_long(items_df, cities, year, month):
+    """Convert item × city wide DataFrame to long-format rows."""
     rows = []
     for _, row in items_df.iterrows():
         item = str(row.get('item', '')).strip().lower()
         cat  = str(row.get('category', 'SPI Items')).strip()
-        if not item or item in ('nan', ''):
+        if not item or item == 'nan':
             continue
         for city in cities:
             price = row.get(city, np.nan)
             if pd.notna(price) and price > 0:
                 rows.append({
-                    'year': year, 'month': month,
-                    'item': item, 'category': cat,
-                    'city': city, 'price': float(price)
+                    'year':     year,
+                    'month':    month,
+                    'item':     item,
+                    'category': cat,
+                    'city':     city,
+                    'price':    float(price)
                 })
     return rows
+
+
+# ─────────────────────────────────────────────────────────────
+# AUDIT FOLDER
+# ─────────────────────────────────────────────────────────────
+
+def audit_data_folder(annexures_dir="data/annexures"):
+    """
+    Scan data/annexures/ and report which files are valid,
+    fake, or missing. Call this before loading.
+    """
+    folder = Path(annexures_dir)
+    print("\n" + "="*60)
+    print(f"  AUDIT: {folder}")
+    print("="*60)
+
+    if not folder.exists():
+        print(f"  ✗ Folder not found: {folder}")
+        print(f"    Create it and place YYYY_MM.xlsx files inside.")
+        print("="*60)
+        return [], []
+
+    files = sorted(folder.glob("*.xlsx")) + sorted(folder.glob("*.xls"))
+    if not files:
+        print(f"  ✗ No Excel files found in {folder}")
+        print("="*60)
+        return [], []
+
+    valid, invalid = [], []
+
+    for fp in files:
+        stem = fp.stem
+        m    = re.match(r'^(\d{4})_(\d{2})$', stem)
+
+        if not m:
+            print(f"  ✗ SKIP   {fp.name}  — name must be YYYY_MM.xlsx")
+            continue
+
+        year, month = int(m.group(1)), int(m.group(2))
+        kb = fp.stat().st_size // 1024
+
+        if _is_real_xlsx(fp):
+            print(f"  ✓ OK     {fp.name}  ({kb} KB)")
+            valid.append((year, month, fp))
+        else:
+            print(f"  ✗ FAKE   {fp.name}  ({kb} KB)"
+                  f"  ← not a real Excel file, delete and re-download")
+            invalid.append(fp)
+
+    # Coverage summary
+    if valid:
+        years_present = sorted(set(y for y, _, _ in valid))
+        covered = {(y, mo) for y, mo, _ in valid}
+        all_expected = {(y, mo) for y in years_present for mo in range(1, 13)}
+        missing = sorted(all_expected - covered)
+
+        print(f"\n  Valid  : {len(valid)}")
+        print(f"  Fake   : {len(invalid)}")
+        if missing:
+            s = ", ".join(f"{y}-{mo:02d}" for y, mo in missing[:12])
+            if len(missing) > 12:
+                s += f" ... (+{len(missing)-12} more)"
+            print(f"  Missing: {len(missing)} months — {s}")
+
+    print("="*60 + "\n")
+    return valid, invalid
 
 
 # ─────────────────────────────────────────────────────────────
 # MAIN LOADER
 # ─────────────────────────────────────────────────────────────
 
-def load_all_data(base_dir="data"):
+def load_all_data(annexures_dir="data/annexures"):
     """
-    Load all valid YYYY_MM.pdf and YYYY_MM.xlsx files.
-    Returns long-format DataFrame: [year, month, item, category, city, price]
+    Load every valid YYYY_MM.xlsx from annexures_dir.
+
+    Returns
+    -------
+    DataFrame with columns: [year, month, item, category, city, price]
     """
-    valid_files, _ = audit_data_folder(base_dir)
+    valid_files, _ = audit_data_folder(annexures_dir)
 
     if not valid_files:
         raise RuntimeError(
-            "No valid files found.\n"
-            "Place files as data/pdfs/YYYY_MM.pdf or data/annexures/YYYY_MM.xlsx"
+            f"No valid Excel files found in '{annexures_dir}'.\n"
+            "Name files as YYYY_MM.xlsx  e.g. 2023_03.xlsx"
         )
 
     all_records = []
 
-    for year, month, fp, fmt in sorted(valid_files):
-        print(f"  {year}-{month:02d} [{fmt:5s}] {fp.name} ...", end=" ", flush=True)
+    for year, month, fp in sorted(valid_files):
+        print(f"  {year}-{month:02d}  {fp.name} ...", end=" ", flush=True)
 
-        if fmt == "Excel":
-            items_df, cities = parse_excel(fp)
-        else:
-            items_df, cities = parse_pdf(fp)
+        items_df, cities = parse_excel(fp)
 
-        if items_df is None or items_df.empty or not cities:
+        if items_df is None or items_df.empty:
             print("FAILED")
             continue
 
-        rows = wide_to_long(items_df, cities, year, month)
+        rows = _wide_to_long(items_df, cities, year, month)
         all_records.extend(rows)
-        print(f"OK  ({len(items_df)} items × {len(cities)} cities = {len(rows)} records)")
+        print(f"OK  ({len(items_df)} items × {len(cities)} cities"
+              f" = {len(rows)} records)")
 
     if not all_records:
-        raise RuntimeError("No records loaded. Check output above for per-file errors.")
+        raise RuntimeError(
+            "No records loaded from any file.\n"
+            "Run:  python src/scraper.py data/annexures/YYYY_MM.xlsx\n"
+            "to inspect a single file and debug."
+        )
 
     df = pd.DataFrame(all_records)
 
-    # Normalize
-    df['item']     = df['item'].str.strip().str.lower().str.replace(r'\s+', ' ', regex=True)
+    # Normalise text fields
+    df['item']     = (df['item'].str.strip()
+                               .str.lower()
+                               .str.replace(r'\s+', ' ', regex=True))
     df['city']     = df['city'].str.strip()
     df['category'] = df['category'].str.strip()
 
+    # Summary
     print(f"\n{'─'*55}")
     print(f"  Records : {len(df):,}")
     print(f"  Items   : {df['item'].nunique()}")
     print(f"  Cities  : {df['city'].nunique()}")
     print(f"  Years   : {sorted(df['year'].unique())}")
     for yr in sorted(df['year'].unique()):
-        mo = sorted(df[df['year'] == yr]['month'].unique())
-        print(f"            {yr}: months {mo}")
+        months = sorted(df[df['year'] == yr]['month'].unique())
+        print(f"            {yr}: {len(months)} months → {months}")
     print(f"{'─'*55}\n")
 
     return df
 
 
 # ─────────────────────────────────────────────────────────────
-# INSPECT HELPER
+# INSPECT A SINGLE FILE  (debugging helper)
 # ─────────────────────────────────────────────────────────────
 
 def inspect_file(filepath):
-    """Quick diagnostic on a single file."""
+    """
+    Print the raw structure of one Excel file.
+    Use this when a file fails to parse — it shows you exactly
+    what the converter produced so you can spot layout differences.
+    """
     fp = Path(filepath)
-    suffix = fp.suffix.lower()
     kb = fp.stat().st_size // 1024
-
-    print(f"\n{'='*65}")
+    print(f"\n{'='*60}")
     print(f"  File  : {fp.name}  ({kb} KB)")
 
-    if suffix == '.pdf':
-        if not is_real_pdf(fp):
-            print("  ✗ NOT a real PDF — probably HTML"); return
-        print("  ✓ Real PDF")
-        items_df, cities = parse_pdf(fp)
-    elif suffix in ('.xlsx', '.xls'):
-        if not is_real_xlsx(fp):
-            print("  ✗ NOT a real Excel — probably HTML"); return
-        print("  ✓ Real Excel")
-        items_df, cities = parse_excel(fp)
-    else:
-        print(f"  ✗ Unknown format: {suffix}"); return
+    if not _is_real_xlsx(fp):
+        print("  ✗ NOT a real Excel file (probably HTML saved as .xlsx)")
+        with open(fp, 'r', errors='replace') as f:
+            print(f"  First 200 chars: {f.read(200)}")
+        print('='*60)
+        return
 
-    if items_df is None:
-        print("  ✗ Parsing FAILED")
-    else:
+    print("  ✓ Valid Excel file")
+    raw = pd.read_excel(fp, header=None, engine='openpyxl')
+    print(f"  Shape : {raw.shape}")
+    print(f"\n  First 5 rows (first 8 cols):")
+    for i in range(min(5, len(raw))):
+        vals = [str(v)[:18] for v in raw.iloc[i].tolist()[:8]]
+        print(f"    Row {i}: {vals}")
+
+    # Show what parse_excel sees
+    print(f"\n  Parsing...")
+    items_df, cities = parse_excel(fp)
+    if items_df is not None:
         print(f"  ✓ Items  : {len(items_df)}")
         print(f"  ✓ Cities : {cities}")
-        print(f"\n  First 5 items:")
-        print(items_df[['item','category']].head().to_string(index=False))
-        print(f"\n  Sample prices (first item, first 4 cities):")
-        if len(items_df) > 0:
-            row = items_df.iloc[0]
-            for c in (cities or [])[:4]:
-                print(f"    {c}: {row.get(c, 'N/A')}")
-    print('='*65)
+        print(f"\n  Sample (first 5 items, first 3 cities):")
+        cols = ['item'] + (cities[:3] if cities else [])
+        print(items_df[cols].head().to_string(index=False))
+    else:
+        print("  ✗ Parsing failed")
+    print('='*60)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -541,9 +418,11 @@ def inspect_file(filepath):
 
 if __name__ == "__main__":
     if len(sys.argv) == 2:
+        # Inspect a single file: python src/scraper.py data/annexures/2023_03.xlsx
         inspect_file(sys.argv[1])
     else:
-        df = load_all_data("data")
+        # Load everything: python src/scraper.py
+        df = load_all_data("data/annexures")
         os.makedirs("data", exist_ok=True)
         df.to_csv("data/cpi_data.csv", index=False)
         print(f"Saved → data/cpi_data.csv")
