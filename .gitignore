@@ -1,5 +1,32 @@
+# =========================
+# Python
+# =========================
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+*.log
+
+# virtual environment
 venv/
-.env
+env/
+.venv/
+
+# =========================
+# Data outputs (YOUR PROJECT)
+# =========================
+data/
+report/figures/
+
+# large generated files
+*.pkl
+*.csv
+*.json
+
+# =========================
+# IDE / OS
+# =========================
 .vscode/
+.idea/
+.DS_Store
+Thumbs.db

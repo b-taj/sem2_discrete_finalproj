@@ -59,6 +59,8 @@ def parse_args():
                    choices=['scrape', 'preprocess', 'similarity',
                             'graphs', 'analysis', 'visualize'],
                    help='Run only one pipeline stage.')
+    p.add_argument('--clean', action='store_true',
+               help='Delete previous outputs before running')
 
     return p.parse_args()
 
@@ -247,6 +249,36 @@ def print_header(title):
 def elapsed(t0):
     t = time.time() - t0
     return f"{int(t//60)}m {t%60:.1f}s"
+
+# ─────────────────────────────────────────────
+# ClEANING
+# ─────────────────────────────────────────────
+import shutil
+
+def clean_outputs():
+    print("\nCleaning old outputs...")
+
+    paths_to_remove = [
+        "data/cpi_data.csv",
+        "data/price_change_vectors.pkl",
+        "data/metadata.json",
+        "data/temporal_analysis.csv",
+        "data/category_analysis.csv",
+    ]
+
+    # Remove specific files
+    for path in paths_to_remove:
+        if os.path.exists(path):
+            os.remove(path)
+            print(f"Deleted {path}")
+
+    # Remove all .pkl similarity + graph files
+    for file in os.listdir("data"):
+        if file.endswith(".pkl"):
+            os.remove(os.path.join("data", file))
+            print(f"Deleted data/{file}")
+
+    print("Clean complete.\n")
 
 
 # ─────────────────────────────────────────────
