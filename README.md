@@ -46,8 +46,12 @@ project/
 │   ├── graph_builder.py      # Step 5: graph construction
 │   ├── analysis.py           # Steps 6-7: centrality + temporal
 │   └── visualize.py          # Step 8: plots
+└── report/                   # has all figures
 ├── main.py                   # runs full pipeline
-└── report/
+├── requirements.txt   
+├── .gitignore
+├── README.md 
+
 ```
 
 ## ⚙️ Pipeline Workflow
@@ -82,27 +86,59 @@ The project runs in the following stages:
 
 ---
 
-## ▶️ How to Run
-
-### 1. Install dependencies
-```bash
+🚀 Setup & Installation
+Clone the repository:
+```
+git clone https://github.com/b-taj/sem2_discrete_finalproj.git
+cd sem2_discrete_finalproj
+```
+Create and activate a virtual environment:
+Windows:
+```
+python -m venv venv
+venv\Scripts\activate
+```
+macOS/Linux:
+```
+python3 -m venv venv
+source venv/bin/activate
+```
+Install dependencies:
+```
 pip install -r requirements.txt
 ```
-2. Download data
-```bash
-python download_pdfs.py
+▶️ Running the Project
+🔹 Full pipeline (with scraping)
 ```
-3. Run full pipeline
-```bash
 python main.py
 ```
-4. Run specific stage
-```bash
-python main.py --stage preprocess
-python main.py --stage similarity
-python main.py --stage analysis
-python main.py --stage visualize
+🔹 Skip scraping (use existing data)
 ```
+python main.py --skip-scrape
+```
+🔹 Custom parameters
+```
+python main.py --skip-scrape --tau 0.5 --K 3
+```
+--tau → similarity threshold
+--K → minimum number of cities for edge creation
+
+📂 Output Files
+
+After running, outputs are saved in:
+
+Data:
+data/
+cpi_data.csv → cleaned CPI data
+price_change_vectors.pkl → price change vectors
+graphs_*.pkl → generated networks
+centrality_*.csv → analysis results
+Visualisations:
+report/figures/
+Network graphs
+Centrality plots
+Heatmaps
+Temporal stability graphs
 📊 Key Features
 ✔ Item-based graph modeling
 ✔ Cross-city price movement analysis
