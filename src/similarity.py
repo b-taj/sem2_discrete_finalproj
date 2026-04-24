@@ -26,11 +26,20 @@ from src.preprocess import load_vectors, load_metadata
 def cosine_sim(v1, v2):
     """
     Cosine similarity between two 1-D numpy arrays.
-    Returns 0.0 if either vector has zero norm (undefined similarity).
+    Handles variable-length vectors (partial years) by truncating to
+    the shorter length — so 2023 (10 months → 9 diffs) and 2024
+    (12 months → 11 diffs) can still be compared within the same year.
+    Returns 0.0 if either vector has zero norm.
     NaN values are treated as 0.
     """
-    v1 = np.nan_to_num(v1, nan=0.0)
-    v2 = np.nan_to_num(v2, nan=0.0)
+    v1 = np.nan_to_num(np.array(v1, dtype=float), nan=0.0)
+    v2 = np.nan_to_num(np.array(v2, dtype=float), nan=0.0)
+    # Align lengths — use minimum length
+    min_len = min(len(v1), len(v2))
+    if min_len == 0:
+        return 0.0
+    v1 = v1[:min_len]
+    v2 = v2[:min_len]
     norm1 = np.linalg.norm(v1)
     norm2 = np.linalg.norm(v2)
     if norm1 == 0 or norm2 == 0:

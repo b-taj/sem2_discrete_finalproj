@@ -1,0 +1,4 @@
+comparison,edges_y1,edges_y2,appeared,disappeared,stable,jaccard
+2023→2024,362,216,145,291,71,0.14
+2024→2026,216,263,217,170,46,0.1062
+ALL YEARS,-,-,-,-,18,-

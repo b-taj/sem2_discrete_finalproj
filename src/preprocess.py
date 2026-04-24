@@ -42,20 +42,48 @@ def load_cpi_data(csv_path="data/cpi_data.csv"):
 
 def filter_complete_series(df, required_months=12):
     """
-    Keep only (item, city, year) combinations that have all
-    required_months of data — needed to compute a full Δp vector.
+    Keep (item, city, year) combinations that have enough months.
+
+    For years with 12 months of data, requires all 12.
+    For PARTIAL years (fewer than 12 months available across all items),
+    automatically lowers the threshold to the actual max months available,
+    so that no year is dropped entirely.
+
+    This ensures 2023 (10 months: Mar-Dec), 2024 (12), 2025 (12),
+    and 2026 (3 months) are ALL kept for analysis.
     """
-    counts = (
-        df.groupby(['item', 'city', 'year'])['month']
-        .nunique()
-        .reset_index(name='month_count')
-    )
-    complete = counts[counts['month_count'] >= required_months]
-    df_clean = df.merge(complete[['item', 'city', 'year']], on=['item', 'city', 'year'])
-    
-    dropped = len(df['item'].unique()) - len(df_clean['item'].unique())
-    print(f"filter_complete_series: kept {len(df_clean):,} rows "
-          f"({dropped} items lost some city-year combos)")
+    all_records = []
+
+    for year, year_df in df.groupby('year'):
+        # How many distinct months exist for this year in the dataset?
+        months_available = year_df['month'].nunique()
+        # Require at least 2 months (need ≥2 prices to compute ≥1 Δp)
+        # But cap at required_months so full years still require all 12
+        threshold = min(months_available, required_months)
+        threshold = max(threshold, 2)   # always need at least 2
+
+        counts = (
+            year_df.groupby(['item', 'city'])['month']
+            .nunique()
+            .reset_index(name='month_count')
+        )
+        counts['year'] = year
+        complete = counts[counts['month_count'] >= threshold]
+
+        kept = year_df.merge(
+            complete[['item', 'city', 'year']],
+            on=['item', 'city', 'year']
+        )
+        items_kept = kept['item'].nunique()
+        print(f"  Year {year}: {months_available} months available, "
+              f"threshold={threshold}, "
+              f"{items_kept} items kept, "
+              f"{len(kept):,} rows")
+        all_records.append(kept)
+
+    df_clean = pd.concat(all_records, ignore_index=True)
+    print(f"filter_complete_series: total {len(df_clean):,} rows kept "
+          f"across {df_clean['year'].nunique()} years")
     return df_clean
 
 
@@ -89,11 +117,10 @@ def compute_price_change_vectors(df):
 
         delta = np.diff(prices)                        # month-to-month differences
 
-        # Pad with NaN if fewer than 11 diffs (shouldn't happen after filter)
-        if len(delta) < 11:
-            delta = np.concatenate([delta, np.full(11 - len(delta), np.nan)])
-
-        vectors[(item, city, year)] = delta[:11]       # always length 11
+        # For partial years (< 12 months), delta has fewer than 11 values.
+        # Keep as-is — the vector length will be len(prices)-1.
+        # remove_zero_vectors will drop all-zero vectors later.
+        vectors[(item, city, year)] = delta
 
     print(f"compute_price_change_vectors: {len(vectors):,} vectors created, "
           f"{skipped} skipped (< 2 months)")

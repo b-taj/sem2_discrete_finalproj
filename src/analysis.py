@@ -42,9 +42,37 @@ def compute_centrality(G, weighted=False):
     """
     weight_arg = 'weight' if weighted else None
 
-    degree_cent      = nx.degree_centrality(G)
-    closeness_cent   = nx.closeness_centrality(G, distance=weight_arg)
-    betweenness_cent = nx.betweenness_centrality(G, weight=weight_arg, normalized=True)
+    degree_cent = nx.degree_centrality(G)
+
+    # ── Closeness centrality ─────────────────────────────────────
+    # Closeness needs "distance" (lower = closer), not similarity.
+    # If weighted, convert similarity weight → distance = 1 - sim,
+    # clamped to [0.001, 2.0] so Dijkstra never sees negative values.
+    if weighted and nx.get_edge_attributes(G, 'weight'):
+        # Build a temporary graph with distance weights
+        G_dist = G.copy()
+        for u, v, data in G_dist.edges(data=True):
+            sim = data.get('weight', 0)
+            # distance = 1 - sim; clamp to avoid zero/negative
+            G_dist[u][v]['distance'] = max(0.001, 1.0 - float(sim))
+        closeness_cent = nx.closeness_centrality(G_dist, distance='distance')
+    else:
+        closeness_cent = nx.closeness_centrality(G)
+
+    # ── Betweenness centrality ───────────────────────────────────
+    # Betweenness also uses weights as distances (shorter path preferred).
+    # For count-based weights (integers ≥ 1), invert: distance = 1/weight.
+    # For unweighted, pass None.
+    if weighted and nx.get_edge_attributes(G, 'weight'):
+        G_btw = G.copy()
+        for u, v, data in G_btw.edges(data=True):
+            w = data.get('weight', 1)
+            G_btw[u][v]['btw_dist'] = max(0.001, 1.0 / max(abs(float(w)), 0.001))
+        betweenness_cent = nx.betweenness_centrality(
+            G_btw, weight='btw_dist', normalized=True
+        )
+    else:
+        betweenness_cent = nx.betweenness_centrality(G, normalized=True)
 
     # Raw degree (useful for ranking ties)
     raw_degree = dict(G.degree())

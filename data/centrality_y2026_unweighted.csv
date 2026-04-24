@@ -1,0 +1,58 @@
+item,category,degree,degree_centrality,closeness_centrality,betweenness_centrality
+garlic (lehsun),SPI Items,25,0.446429,0.492401,0.037571
+bananas (kela) local,SPI Items,22,0.392857,0.453782,0.02012
+electricity charges upto 50 units,SPI Items,21,0.375,0.406015,0.020427
+pulse mash (washed),SPI Items,21,0.375,0.453782,0.015298
+chicken farm broiler (live),SPI Items,19,0.339286,0.436658,0.03799
+pulse moong (washed),SPI Items,19,0.339286,0.436658,0.014133
+pulse gram,SPI Items,19,0.339286,0.428571,0.017138
+mutton (average quality),SPI Items,19,0.339286,0.420779,0.017488
+onions,SPI Items,18,0.321429,0.420779,0.024554
+lpg 11.67 kg cylinder,SPI Items,18,0.321429,0.428571,0.010099
+petrol super,SPI Items,17,0.303571,0.420779,0.009397
+hi-speed diesel,SPI Items,17,0.303571,0.406015,0.00459
+mustard oil (average quality),SPI Items,16,0.285714,0.406015,0.006059
+"cooking oil dalda or other similar brand (sn), 5 litre tin",Unknown,16,0.285714,0.399015,0.009486
+pulse masoor (washed),SPI Items,16,0.285714,0.379391,0.009798
+vegetable ghee dalda/habib 2.5 kg tin,Unknown,16,0.285714,0.406015,0.008124
+shirting (average quality),SPI Items,15,0.267857,0.373272,0.004702
+tomatoes,SPI Items,15,0.267857,0.399015,0.014866
+beef with bone (average quality),SPI Items,15,0.267857,0.392252,0.003151
+cigarettes capstan 20's packet,SPI Items,15,0.267857,0.392252,0.002798
+wheat flour bag,SPI Items,15,0.267857,0.392252,0.005821
+potatoes,SPI Items,14,0.25,0.361607,0.002974
+eggs hen (farm),SPI Items,14,0.25,0.356044,0.00509
+sugar refined,SPI Items,13,0.232143,0.330612,0.002226
+firewood whole,SPI Items,12,0.214286,0.379391,0.002076
+salt powdered (national/shan) 800 gm packet,Unknown,12,0.214286,0.340336,0.000226
+vegetable ghee dalda/habib or other superior quality 1 kg pouch,Unknown,12,0.214286,0.340336,0.000226
+gur (average quality),SPI Items,11,0.196429,0.330612,0.000146
+"long cloth 57"" gul ahmed/al karam",SPI Items,10,0.178571,0.330612,0.000135
+rice basmati broken (average quality),Unknown,9,0.160714,0.367347,0.005102
+georgette (average quality),SPI Items,9,0.160714,0.325956,0.0
+curd (dahi) loose,SPI Items,8,0.142857,0.321429,0.0
+lawn printed gul ahmed/al karam,SPI Items,8,0.142857,0.312741,5.4e-05
+powdered milk nido 390 gm polybag,Unknown,7,0.125,0.345416,0.000794
+chilies powder national 200 gm packet,Unknown,6,0.107143,0.325956,0.000328
+rice irri-6/9 (sindh/punjab),SPI Items,5,0.089286,0.27551,0.0
+cooked beef at average hotel,SPI Items,2,0.035714,0.269103,0.0
+bread plain (small size),SPI Items,0,0.0,0.0,0.0
+energy saver philips 14 watt,SPI Items,0,0.0,0.0,0.0
+chilies powder national 200 gm pa,SPI Items,0,0.0,0.0,0.0
+cooked daal at average hotel,SPI Items,0,0.0,0.0,0.0
+ladies sandal bata,SPI Items,0,0.0,0.0,0.0
+gas charges upto 3.3719 mmbtu,SPI Items,0,0.0,0.0,0.0
+gents sandal bata,SPI Items,0,0.0,0.0,0.0
+gents sponge chappal bata,SPI Items,0,0.0,0.0,0.0
+cooking oil dalda or other similar,SPI Items,0,0.0,0.0,0.0
+powdered milk nido 390 gm polyba,SPI Items,0,0.0,0.0,0.0
+milk fresh (un-boiled),SPI Items,0,0.0,0.0,0.0
+match box,SPI Items,0,0.0,0.0,0.0
+rice basmati broken (average qualit,SPI Items,0,0.0,0.0,0.0
+tea lipton yellow label 190 gm pack,SPI Items,0,0.0,0.0,0.0
+salt powdered (national/shan) 80,SPI Items,0,0.0,0.0,0.0
+sufi washing soap 250 gm cake,SPI Items,0,0.0,0.0,0.0
+vegetable ghee dalda/habib 2.5 kg,SPI Items,0,0.0,0.0,0.0
+toilet soap lifebuoy 115 gm,SPI Items,0,0.0,0.0,0.0
+tea prepared ordinary,SPI Items,0,0.0,0.0,0.0
+vegetable ghee dalda/habib or ot,SPI Items,0,0.0,0.0,0.0
