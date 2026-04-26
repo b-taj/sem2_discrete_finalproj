@@ -6,8 +6,7 @@ data/temporal_analysis.csv
 data/category_analysis.csv
 data/centrality_stability.csv
 
-# ── Generated figures ──────────────────────────────────
-report/figures/
+
 
 # ── Python cache ───────────────────────────────────────
 __pycache__/
